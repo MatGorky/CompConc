@@ -1,4 +1,8 @@
-/* Multiplicacao de matriz-vetor (considerando matrizes quadradas) */
+/* Disciplina: Computacao Concorrente */
+/* Prof.: Silvana Rossetto */
+/* DRE: 119043032    Nome: Matheus Moura Gorchinsky*/
+/* Módulo 1 - Laboratório: 1 */
+
 #include<stdio.h>
 #include<stdlib.h>
 #include<pthread.h>
