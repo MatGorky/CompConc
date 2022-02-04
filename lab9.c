@@ -50,7 +50,7 @@ void *t3 () {
 
 void *t4 () {
   sem_wait(&condt5); //espera T5 executar
-  printf("Aceita um copo d'\u00E1gua\n");
+  printf("Aceita um copo d'\u00E1gua?\n");
   sem_wait(&em); //sessão crítica
   contador ++;
   if(contador == 3){ //quando t2,t3 e t3 tiverem sido executadas, o contador será igual a 3, e a execução de t1 estará liberada
