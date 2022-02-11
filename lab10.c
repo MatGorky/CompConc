@@ -20,6 +20,8 @@ sem_t emc;     // semáforo para exclusao mutua entre as threads consumidoras
 sem_t condc ;     //semáforo para sincronizar produtoras com consumidoras, associado a condição das consumidoras já terem esvaziado o buffer
 sem_t condp ;   //semáforo para sincronizar produtoras com consumidoras, associado a condição das produtoras terem preenchido o buffer
 
+sem_t slog; //esse semáforo existe apenas para garantir a atomicidade dos printfs, para a geração do log
+//não afetando a execução do programa(além de aumentar o overhead)
 
 //variaveis do problema
 int Buffer[TAM]; //espaco de dados compartilhados
@@ -35,22 +37,38 @@ void IniciaBuffer(int n) {
 //imprime o buffer
 void ImprimeBuffer(int n) {
   int i;
-  for(i=0; i<n; i++)
+  sem_wait(&slog);
+  printf("pc.verificaBuffer(\"");
+  for(i=0; i<n; i++){
     printf("%d ", Buffer[i]);
-  printf("\n");
+  }  
+  printf("\")\n");
+  sem_post(&slog);
 }
 
 //Preenche o buffer ou bloqueia a thread caso o Buffer não esteja vazio
 void Insere (int item, int id) {
    
    sem_wait(&emp); //exclusão mútua entre produtoras apenas, não queremos que duas ou mais produtoras passem por aqui concorrentemente
-   printf("P[%d] quer inserir\n", id);
+   
+   sem_wait(&slog);
+   printf("pc.produtorQuerInserir(%d)\n", id);
+   sem_post(&slog);
+   
    if(count > 0) { //se o buffer não estiver vazio
-     printf("P[%d] bloqueou\n", id);
+     
+     sem_wait(&slog);
+     printf("pc.produtorBloqueou(%d)\n", id);
+     sem_post(&slog);
+     
      sem_post(&condp); //libera as consumidoras
      sem_wait(&condc); //espera pelas consumidoras consumirem o array, devido a semáforos funcionarem por incrementos e decrementos, não há problema de corrida aqui
      //pois mesmo que que o valor de contador seja alterado após a entrada no if, um post da consumidora irá liberar este wait
-     printf("P[%d] desbloqueou\n", id);
+    
+     sem_wait(&slog);
+     printf("pc.produtorDesbloqueou(%d)\n", id);
+     sem_post(&slog);
+   
    }
    
    for(int i = 0; i< TAM; i++){ //preenchendo o buffer
@@ -59,22 +77,38 @@ void Insere (int item, int id) {
    }
    //após preencher atualizamos o contador(neste caso, isso é melhor que incrementar o contador durante o preenchimento, pois evita que consumidoras sejam executadas
    count = TAM;
-   printf("P[%d] inseriu\n", id);
+
+   sem_wait(&slog);
+   printf("pc.produtorInseriu(%d)\n", id);
+   sem_post(&slog);
+   
    ImprimeBuffer(TAM);
    sem_post(&emp);  //exclusão entre as produtoras acaba também
-   
+   //sem_post(&condp); //libera as consumidoras
 }
 
 //retira um elemento no Buffer ou bloqueia a thread caso o Buffer esteja vazio
 int Retira (int id) {
    int item;
    sem_wait(&emc);//exclusão mútua entre consumidoras apenas, não queremos que duas ou mais consumidoras passem por aqui concorrentemente
-   printf("C[%d] quer consumir\n", id);
+   
+   sem_wait(&slog);
+   printf("pc.consumidorQuerConsumir(%d)\n", id);
+   sem_post(&slog);
+
    if(count == 0) { //buffer já foi esvaziado
+
+     sem_wait(&slog);
+     printf("pc.consumidorBloqueou(%d)\n", id);
+     sem_post(&slog);
+
      sem_post(&condc); //então podemos liberar a produtora
-     printf("C[%d] bloqueou\n", id);
      sem_wait(&condp); //esperamos a produtora preencher o buffer
-     printf("C[%d] desbloqueou\n", id);
+     
+     sem_wait(&slog);
+     printf("pc.consumidorDesbloqueou(%d)\n", id);
+     sem_post(&slog);
+
    }
   
    item = Buffer[out];
@@ -82,16 +116,22 @@ int Retira (int id) {
    out = (out + 1)%TAM;
    count--;
    
-   printf("C[%d] consumiu %d\n", id, item);
+   sem_wait(&slog);
+   printf("pc.consumidorConsumiu(%d,%d)\n", id, item);
+   sem_post(&slog);
+
    ImprimeBuffer(TAM);
    sem_post(&emc); //sessão crítica das consumidoras acaba aqui
+   
    return item;
 }
 
 //thread produtora
 void * produtor(void * arg) {
   int *id = (int *) arg;
-  printf("Sou a thread produtora %d\n", *id);
+  sem_wait(&slog);
+  printf("pc.produtorCriado(%d)\n", *id);
+  sem_post(&slog);
   while(1) {
     //produzindo o item
     Insere(*id, *id);
@@ -105,7 +145,9 @@ void * produtor(void * arg) {
 void * consumidor(void * arg) {
   int *id = (int *) arg;
   int item;
-  printf("Sou a thread consumidora %d\n", *id);
+  sem_wait(&slog);
+  printf("pc.consumidorCriado(%d)\n", *id);
+  sem_post(&slog);
   while(1) {
     item = Retira(*id);
     sleep(1); //faz o processamento do item 
@@ -121,7 +163,7 @@ int main(int argc, char *argv[]) {
   int i;
   
   if(argc < 3){
-    printf("Argumentos insuficientes, utilizando quantidades padrões");
+    printf("#Argumentos insuficientes, utilizando quantidades padrões");
   }
   else{
     c = atoi(argv[1]);
@@ -144,6 +186,8 @@ int main(int argc, char *argv[]) {
   sem_init(&condc, 0, 0); //para condicional, começa com 0, pois o primeiro wait encontrado só será liberado após um post
   sem_init(&emc, 0, 1); //para exclusão mútua, começa com 1, pois o primeiro wait encontrado não irá impedir a execução, apenas um próximo
   sem_init(&condp, 0, 0); //para condicional, começa com 0, pois o primeiro wait encontrado só será liberado após um post
+  sem_init(&slog, 0, 1); //para o log
+  
   //inicializa o Buffer
   IniciaBuffer(TAM);  
 
